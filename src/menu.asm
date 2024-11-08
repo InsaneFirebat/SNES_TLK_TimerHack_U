@@ -1444,14 +1444,12 @@ action_mainmenu:
     LDA !ram_cm_cursor_stack : TAX
     LDA.l MainMenuBanks,X : STA !ram_cm_menu_bank
     STA $42 : STA $46
-
-    BRA action_submenu_skipStackOp
+    PLB
+    ; Fallthrough to action_submenu
 }
 
 action_submenu:
 {
-    PHB
-  .skipStackOp
     ; Increment stack pointer by 2, then store current menu
     LDA !ram_cm_stack_index : INC #2 : STA !ram_cm_stack_index : TAX
     TYA : STA !ram_cm_menu_stack,X
@@ -1464,7 +1462,6 @@ action_submenu:
     JSL cm_colors
     JSL cm_draw
 
-    PLB
     RTL
 }
 

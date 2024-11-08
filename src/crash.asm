@@ -54,27 +54,26 @@ CrashHandler:
     PHX : PLB : PLB                        ; set DB to zero
 
     ; check condition of stack
-    BMI .overflow
+    CMP #$0000 : BMI .overflow
     CMP #$0300 : BPL .underflow
 
     ; store crash type, 0 = handler, 8000 = overflow, 4000 = underflow
+    INC : TAY                              ; top byte of stack in Y
     LDA #$0000 : STA !sram_crash_type      ; xxx0 = generic
-    LDA !sram_crash_sp : INC : TAY
     BRA .loopStack
 
   .overflow
     LDA #$8000 : STA !sram_crash_type      ; 8xxx = stack overflow
-    LDA #$01FF : TCS                       ; repair stack
-    PHB : PHB : PLA : STA !sram_crash_dbp  ; salvage crash DB
     LDY #$0000                             ; dump $0000-$002F
     BRA .loopStack
 
   .underflow
     LDA #$4000 : STA !sram_crash_type      ; 4xxx = stack underflow
-    LDA #$01FF : TCS                       ; repair stack
     LDA $001FFE : STA !sram_crash_temp     ; preserve stack bytes
+
+  .fixStack
+    LDA #$01FF : TCS                       ; repair stack
     PHB : PHB : PLA : STA !sram_crash_dbp  ; salvage crash DB
-    LDY #$02D0                             ; dump $02D0-$02FF
 
   .loopStack
     LDA $0000,Y : STA !sram_crash_stack,X
@@ -246,7 +245,7 @@ CrashLoop:
     LDA !sram_crash_input_new : TAX : BEQ CrashLoop
 
     ; check for soft reset shortcut (Select+Start+L+R)
-    LDA !sram_crash_input : AND #$3030 : CMP #$3030 : BNE +
+    LDA !sram_crash_input : CMP #$3030 : BNE +
     AND !sram_crash_input_new : BEQ +
     JML $008000 ; Soft Reset
 
@@ -264,10 +263,11 @@ if !FEATURE_SAVESTATES
     JML ControllerShortcuts_loadstate
 endif
 
-+   TXA : AND #$0010 : BNE .incPalette ; R
-    TXA : AND #$0020 : BNE .decPalette ; L
-    TXA : AND #$1080 : BNE .next       ; A or Start
-    TXA : AND #$A000 : BNE .previous   ; B or Select
++   TXA
+    BIT !CTRL_R : BNE .incPalette
+    BIT !CTRL_L : BNE .decPalette
+    BIT #$1080 : BNE .next     ; A or Start
+    BIT #$A000 : BNE .previous ; B or Select
     JMP CrashLoop
 
   .previous
@@ -305,8 +305,6 @@ CrashPageTable:
 
 CrashDump:
 {
-    %ai16()
-
     ; -- Draw header --
     LDA.l #CrashTextHeader : STA !sram_crash_text
     LDA.l #CrashTextHeader>>16 : STA !sram_crash_text_bank
@@ -322,17 +320,17 @@ CrashDump:
     LDX #$0686 : JSR crash_draw_text
 
     ; -- Draw register labels --
-    LDA #$0D00 : STA !crash_tilemap_buffer+$108  ; A
-    LDA #$0D17 : STA !crash_tilemap_buffer+$148  ; X
-    LDA #$0D18 : STA !crash_tilemap_buffer+$188  ; Y
-    LDA #$0D03 : STA !crash_tilemap_buffer+$118  ; D
-                 STA !crash_tilemap_buffer+$158  ; D
-    LDA #$0D0F : STA !crash_tilemap_buffer+$11A  ; P
-                 STA !crash_tilemap_buffer+$12C  ; P
-                 STA !crash_tilemap_buffer+$16A  ; P
-    LDA #$0D01 : STA !crash_tilemap_buffer+$15A  ; B
-    LDA #$0D12 : STA !crash_tilemap_buffer+$12A  ; S
-                 STA !crash_tilemap_buffer+$16C  ; S
+    LDA #$0D00|"A" : STA !crash_tilemap_buffer+$108
+    LDA #$0D00|"X" : STA !crash_tilemap_buffer+$148
+    LDA #$0D00|"Y" : STA !crash_tilemap_buffer+$188
+    LDA #$0D00|"D" : STA !crash_tilemap_buffer+$118
+                     STA !crash_tilemap_buffer+$158
+    LDA #$0D00|"P" : STA !crash_tilemap_buffer+$11A
+                     STA !crash_tilemap_buffer+$12C
+                     STA !crash_tilemap_buffer+$16A
+    LDA #$0D00|"B" : STA !crash_tilemap_buffer+$15A
+    LDA #$0D00|"S" : STA !crash_tilemap_buffer+$12A
+                     STA !crash_tilemap_buffer+$16C
 
     ; -- Draw stack label --
     LDA.l #CrashTextStack1 : STA !sram_crash_text
@@ -450,21 +448,21 @@ CrashDump:
 
   .drawBRKCOPText
     LDA !sram_crash_type : AND #$000F : CMP #$0002 : BEQ .COPcrash
-    LDA #$0D01 : STA !crash_tilemap_buffer+$2CC ; B
-    LDA #$0D11 : STA !crash_tilemap_buffer+$2CE ; R
-    LDA #$0D0A : STA !crash_tilemap_buffer+$2D0 ; K
-    LDA #$0D44 : STA !crash_tilemap_buffer+$2D4 ; #
-    LDA #$0D4E : STA !crash_tilemap_buffer+$2D6 ; $
-    STA !crash_tilemap_buffer+$2E6 ; $
+    LDA #$0D00|"B" : STA !crash_tilemap_buffer+$2CC
+    LDA #$0D00|"R" : STA !crash_tilemap_buffer+$2CE
+    LDA #$0D00|"K" : STA !crash_tilemap_buffer+$2D0
+    LDA #$0D00|"#" : STA !crash_tilemap_buffer+$2D4
+    LDA #$0D00|"$" : STA !crash_tilemap_buffer+$2D6
+                     STA !crash_tilemap_buffer+$2E6
     BRA .drawStack
 
   .COPcrash
-    LDA #$0D02 : STA !crash_tilemap_buffer+$2CC ; C
-    LDA #$0D7D : STA !crash_tilemap_buffer+$2CE ; O
-    LDA #$0D0F : STA !crash_tilemap_buffer+$2D0 ; P
-    LDA #$0D44 : STA !crash_tilemap_buffer+$2D4 ; #
-    LDA #$0D4E : STA !crash_tilemap_buffer+$2D6 ; $
-    STA !crash_tilemap_buffer+$2E6 ; $
+    LDA #$0D00|"C" : STA !crash_tilemap_buffer+$2CC
+    LDA #$0D00|"O" : STA !crash_tilemap_buffer+$2CE
+    LDA #$0D00|"P" : STA !crash_tilemap_buffer+$2D0
+    LDA #$0D00|"#" : STA !crash_tilemap_buffer+$2D4
+    LDA #$0D00|"$" : STA !crash_tilemap_buffer+$2D6
+                     STA !crash_tilemap_buffer+$2E6
 
   .drawStack
     ; -- Draw Stack Values --
@@ -523,13 +521,14 @@ CrashMemViewer:
     ; pass held input every other frame (slow down)
     AND #$0001 : BEQ -
     ; treat held (left/right) inputs as new
-    LDA !sram_crash_input : AND #$0300 : TAX
+    LDA !sram_crash_input : AND !CTRL_HORIZ : TAX
 
   .new_inputs
-    AND #$0800 : BNE .pressedUp
-    TXA : AND #$0400 : BNE .pressedDown
-    TXA : AND #$0200 : BNE .pressedLeft
-    TXA : AND #$0100 : BNE .pressedRight
+    TXA
+    BIT !CTRL_UP : BNE .pressedUp
+    BIT !CTRL_DOWN : BNE .pressedDown
+    BIT !CTRL_LEFT : BNE .pressedLeft
+    BIT !CTRL_RIGHT : BNE .pressedRight
     JMP .drawMemViewer
 
   .pressedUp
@@ -597,7 +596,6 @@ CrashMemViewer:
 
     ; -- Draw Memory Viewer --
   .drawMemViewer
-    %a16()
     ; draw cursor icons
     LDA !sram_crash_cursor : ASL : TAX
     LDA.l CursorPositions,X : TAX
@@ -743,8 +741,6 @@ CursorPositions:
 
 CrashInfo:
 {
-    %ai16()
-
     ; draw header text
     LDA.l #CrashTextHeader3 : STA !sram_crash_text
     LDA.l #CrashTextHeader3>>16 : STA !sram_crash_text_bank
@@ -816,8 +812,8 @@ crash_draw_text:
     LDA $00 : PHA : LDA $02 : PHA
     LDA !sram_crash_text_bank : STA $02
     LDA !sram_crash_text : STA $00
-    %a8()
     LDY #$0000
+    %a8()
 
   .loop
     LDA [$00],Y : CMP #$FF : BEQ .end             ; terminator
@@ -834,7 +830,6 @@ crash_draw_text:
 
 crash_draw4:
 {
-    PHP : %a16()
     PHB : PHK : PLB
     ; (X000)
     LDA !sram_crash_draw_value : AND #$F000 : XBA : LSR #3 : TAY
@@ -848,7 +843,7 @@ crash_draw4:
     ; (000X)
     LDA !sram_crash_draw_value : AND #$000F : ASL : TAY
     LDA.w CrashHexGFXTable,Y : STA !crash_tilemap_buffer+6,X
-    PLB : PLP
+    PLB
     RTS
 }
 
@@ -868,16 +863,11 @@ crash_draw2:
 
 crash_cgram_transfer:
 {
-    PHP : %a16()
+    LDA !sram_crash_palette : ASL : TAX
+    JMP (.palettePointers,X)
 
-    LDA !sram_crash_palette : BEQ .white ; 0 index
-    DEC : BEQ .grey      ; 1
-    DEC : BEQ .green     ; 2
-    DEC : BEQ .pink      ; 3
-    DEC : BEQ .yellow    ; 4
-    DEC : BEQ .blue      ; 5
-    DEC : BEQ .red       ; 6
-    DEC : BEQ .orange    ; 7
+  .palettePointers
+    dw .white, .grey, .green, .pink, .yellow, .blue, .red, .orange
 
   .white
     LDA #$44E5 : STA !sram_crash_palette_12
@@ -927,56 +917,56 @@ crash_cgram_transfer:
     LDA !sram_crash_palette_14 : STA $002122
     LDA !sram_crash_palette_14+1 : STA $002122
     LDA #$0F : STA $0F2100 ; disable forced blanking
-    PLP
+    %a16()
     RTL
 }
 
 crash_tileset_transfer:
 {
-    ; new
     %i8()
-    LDX #$80 : STX $2100   ; enable forced blanking
-    LDX #$80 : STX $2115   ; word-access, inc by 1
+    LDX #$80 : STX $2100 ; enable forced blanking
+    LDX #$80 : STX $2115 ; word-access, inc by 1
     LDA #$7800 : STA $2116 ; VRAM address ($F000 in VRAM)
     LDA #$1801 : STA $4300 ; low = word, normal increment (DMA MODE), high = destination (VRAM write register)
     LDA #CrashGFXTileset : STA $4302 ; source address
     LDX #CrashGFXTileset>>16 : STX $4304 ; source bank
     LDA #$0900 : STA $4305 ; size
-    LDX #$01 : STX $420B   ; begin transfer, channel 0
-    LDX #$0F : STX $2100   ; disable forced blanking
-    %ai16()
+    LDX #$01 : STX $420B ; begin transfer, channel 0
+    LDX #$0F : STX $2100 ; disable forced blanking
+    %i16()
     RTL
 }
 
 crash_tilemap_transfer:
 {
-    %a16()
+    %i8()
+    LDX #$80 : STX $2100   ; enable forced blanking
     PHB : LDA #$0000 : PHA : PLB : PLB
     LDA #$7C80 : STA $2116 ; VRAM address ($F900 in VRAM)
     LDA #$1801 : STA $4350 ; low = word, normal increment (DMA MODE), high = destination (VRAM write register)
     LDA #!crash_tilemap_buffer : STA $4352 ; source address
     LDA.w #!crash_tilemap_buffer>>16 : STA $4354 ; source bank
     LDA #$0700 : STA $4355 ; size
-    %a8()
-    LDA #$80 : STA $2115 ; word-access, inc by 1
-    LDA #$20 : STA $420B ; initiate DMA on channel 2
-    %a16()
+    LDX #$80 : STX $2115 ; word-access, inc by 1
+    LDX #$20 : STX $420B ; initiate DMA on channel 2
+    LDX #$0F : STX $2100 ; disable forced blanking
+    %i16()
     PLB
     RTL
 }
 
 crash_next_frame:
 {
-    PHP : %a8()
+    %a8()
     LDA !LK_NMI_Counter
 -   CMP !LK_NMI_Counter : BEQ -
-    PLP
+    %a16()
     RTL
 }
 
 crash_read_inputs:
 {
-    PHP : %a8()
+    %a8()
 -   LDA $4212 : AND #$01 : BNE -
 
     %a16()
@@ -1002,7 +992,6 @@ crash_read_inputs:
 
   .done
     LDA !sram_crash_input : STA !sram_crash_input_prev
-    PLP
     RTL
 }
 
